@@ -314,6 +314,150 @@ def gen_subave(x: np.ndarray, ind: np.ndarray) -> np.ndarray:
     
     return y
 
+def woody_stochastic(x: np.ndarray,
+                     n_runs: int = 1000,
+                     max_lag_init: int = 50,
+                     tol: float = 0.1,
+                     max_it: int = 100,
+                     est_mthd: str = 'woody',
+                     xcorr_mthd: str = 'unbiased',
+                     max_shift: int = 50,
+                     return_all: bool = False,
+                     verbose: bool = True) -> Tuple:
+    """
+    Stochastic Woody filter with random initialization.
+    
+    Runs Woody filter multiple times with different random initial lag offsets
+    to avoid local minima. Returns the solution with highest correlation coefficient.
+    
+    Parameters
+    ----------
+    x : np.ndarray
+        Signal matrix (n_timepoints, n_trials)
+    n_runs : int
+        Number of random initializations to try (default=1000)
+    max_lag_init : int
+        Maximum random lag offset for initialization (default=50 samples)
+    tol : float
+        Convergence tolerance (default=0.1)
+    max_it : int
+        Maximum iterations per run (default=100)
+    est_mthd : str
+        Estimation method ('woody' or 'thornton')
+    xcorr_mthd : str
+        Cross-correlation method ('biased' or 'unbiased')
+    max_shift : int
+        Maximum shift to search for alignment (default=50)
+    return_all : bool
+        If True, return all runs for analysis (default=False)
+    verbose : bool
+        Print progress (default=True)
+    
+    Returns
+    -------
+    best_avg : np.ndarray
+        Best aligned average waveform
+    best_lags : np.ndarray
+        Best lag estimates for each trial
+    best_corr : float
+        Correlation coefficient of best solution (p value from convergence)
+    all_results : list (optional)
+        List of dicts with all runs if return_all=True
+    """
+    N, M = x.shape
+    
+    best_corr = -np.inf
+    best_avg = None
+    best_lags = None
+    
+    if return_all:
+        all_results = []
+    
+    # Pre-compute signal norms for efficiency
+    sig_x = np.sqrt(np.sum(x**2, axis=0))
+    
+    for run in range(n_runs):
+        # Generate random initial lags for each trial
+        init_lags = np.random.randint(-max_lag_init, max_lag_init + 1, size=M)
+        
+        # Apply initial random shifts
+        x_shifted = np.zeros_like(x)
+        for i in range(M):
+            lag = init_lags[i]
+            if lag > 0:
+                x_shifted[:N-lag, i] = x[lag:, i]
+            elif lag < 0:
+                x_shifted[-lag:, i] = x[:N+lag, i]
+            else:
+                x_shifted[:, i] = x[:, i]
+        
+        # Run Woody filter on shifted data
+        try:
+            aligned_avg, detected_lags = woody(
+                x_shifted,
+                tol=tol,
+                max_it=max_it,
+                est_mthd=est_mthd,
+                xcorr_mthd=xcorr_mthd,
+                max_shift=max_shift
+            )
+            
+            # Compute final correlation coefficient (p value)
+            if np.sqrt(np.dot(aligned_avg, aligned_avg)) > 0 and np.all(sig_x > 0):
+                # Reconstruct aligned trials to compute correlation
+                x_aligned = np.zeros_like(x)
+                for i in range(M):
+                    total_lag = init_lags[i] + detected_lags[i]
+                    if total_lag > 0 and total_lag < N:
+                        x_aligned[:N-total_lag, i] = x[total_lag:, i]
+                    elif total_lag < 0 and -total_lag < N:
+                        x_aligned[-total_lag:, i] = x[:N+total_lag, i]
+                    else:
+                        x_aligned[:, i] = x[:, i]
+                
+                # Compute correlation coefficient
+                p_vec = np.dot(aligned_avg, x_aligned) / (np.sqrt(np.dot(aligned_avg, aligned_avg)) * sig_x)
+                p = np.sum(p_vec) / M
+            else:
+                p = -np.inf
+            
+            # Combine initial and detected lags
+            total_lags = init_lags + detected_lags
+            
+            # Store if best
+            if p > best_corr:
+                best_corr = p
+                best_avg = aligned_avg.copy()
+                best_lags = total_lags.copy()
+                
+                if verbose and run % 100 == 0:
+                    print(f"Run {run}/{n_runs}: New best corr = {best_corr:.4f}")
+            
+            if return_all:
+                all_results.append({
+                    'run': run,
+                    'init_lags': init_lags.copy(),
+                    'detected_lags': detected_lags.copy(),
+                    'total_lags': total_lags.copy(),
+                    'aligned_avg': aligned_avg.copy(),
+                    'corr': p
+                })
+                
+        except Exception as e:
+            if verbose:
+                print(f"Run {run} failed: {e}")
+            continue
+    
+    if verbose:
+        print(f"\nBest correlation: {best_corr:.4f}")
+        print(f"Lag range: [{best_lags.min()}, {best_lags.max()}] samples")
+        print(f"Lag std: {best_lags.std():.2f} samples")
+    
+    if return_all:
+        return best_avg, best_lags, best_corr, all_results
+    else:
+        return best_avg, best_lags, best_corr
+
 
 # Example usage and testing
 if __name__ == "__main__":
