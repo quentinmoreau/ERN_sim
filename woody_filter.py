@@ -4,7 +4,7 @@ Woody filter for temporal alignment of signals with jitter.
 Translation from MATLAB implementation used in:
 Bonaiuto et al. (2021) "Laminar dynamics of high amplitude beta bursts in human motor cortex"
 
-Author: Translated to Python
+Author: Quentin Moreau
 Date: 2026-01-19
 """
 
@@ -147,18 +147,15 @@ def woody_core(x: np.ndarray,
     """
     N, M = x.shape
     mx = np.mean(x, axis=1)  # Initial template
-    p = 0.0  # Initialize as scalar
+    p = 0.0
     conv = True
     run = 0
     
-    # Pre-compute signal norms
     sig_x = np.sqrt(np.sum(x**2, axis=0))
     
-    # Reference point for lag calculation
     X = correlate(mx, mx, mode='full')
     ref = len(X) // 2
     
-    # Store lags for each trial
     lag_data = np.zeros(M, dtype=int)
     
     while conv and (run < max_it):
@@ -168,10 +165,8 @@ def woody_core(x: np.ndarray,
         for i in range(M):
             y = x[:, i]
             
-            # Cross-correlate trial with template
             xy = correlate(mx, y, mode='full')
             
-            # Apply normalization
             if xcorr_mthd == 'unbiased':
                 lags = np.arange(-N+1, N)
                 norm = N - np.abs(lags)
@@ -179,20 +174,16 @@ def woody_core(x: np.ndarray,
             elif xcorr_mthd == 'biased':
                 xy = xy / N
             
-            # Find lag that maximizes correlation
             if max_shift is not None:
-                # Constrain search to ±max_shift samples around center
                 search_start = max(0, ref - max_shift)
                 search_end = min(len(xy), ref + max_shift + 1)
                 search_range = xy[search_start:search_end]
                 ind = np.argmax(search_range) + search_start
             else:
-                # Search entire range
                 ind = np.argmax(xy)
             
             lag = ref - ind
             
-            # Update weighted average with shifted trial
             if lag > 0:
                 num = w[lag:] - 1
                 z[:N-lag] = (z[:N-lag] * num + y[lag:]) / w[lag:]
@@ -208,11 +199,9 @@ def woody_core(x: np.ndarray,
             
             lag_data[i] = lag
         
-        # Update template
         old_mx = mx.copy()
         mx = z.copy()
         
-        # Compute correlation coefficient for convergence check
         p_old = p
         if np.sqrt(np.dot(mx, mx)) > 0 and np.all(sig_x > 0):
             p_vec = np.dot(mx, x) / (np.sqrt(np.dot(mx, mx)) * sig_x)
@@ -220,7 +209,6 @@ def woody_core(x: np.ndarray,
         else:
             p = 0
         
-        # Check convergence
         err = abs(p - p_old)
         if err < tol:
             conv = False
@@ -305,14 +293,13 @@ def gen_subave(x: np.ndarray, ind: np.ndarray) -> np.ndarray:
     T = len(ind) - 1
     y = np.zeros((N, T))
     
-    # Generate sub-averages
     for i in range(T - 1):
         y[:, i] = np.mean(x[:, ind[i]:ind[i+1]], axis=1)
     
-    # Last sub-average
     y[:, T-1] = np.mean(x[:, ind[T-1]:], axis=1)
     
     return y
+
 
 def woody_stochastic(x: np.ndarray,
                      n_runs: int = 1000,
@@ -322,8 +309,7 @@ def woody_stochastic(x: np.ndarray,
                      est_mthd: str = 'woody',
                      xcorr_mthd: str = 'unbiased',
                      max_shift: int = 50,
-                     return_all: bool = False,
-                     verbose: bool = True) -> Tuple:
+                     verbose: bool = False) -> Tuple:
     """
     Stochastic Woody filter with random initialization.
     
@@ -348,10 +334,8 @@ def woody_stochastic(x: np.ndarray,
         Cross-correlation method ('biased' or 'unbiased')
     max_shift : int
         Maximum shift to search for alignment (default=50)
-    return_all : bool
-        If True, return all runs for analysis (default=False)
     verbose : bool
-        Print progress (default=True)
+        Print progress (default=False)
     
     Returns
     -------
@@ -360,9 +344,7 @@ def woody_stochastic(x: np.ndarray,
     best_lags : np.ndarray
         Best lag estimates for each trial
     best_corr : float
-        Correlation coefficient of best solution (p value from convergence)
-    all_results : list (optional)
-        List of dicts with all runs if return_all=True
+        Correlation coefficient of best solution
     """
     N, M = x.shape
     
@@ -370,17 +352,11 @@ def woody_stochastic(x: np.ndarray,
     best_avg = None
     best_lags = None
     
-    if return_all:
-        all_results = []
-    
-    # Pre-compute signal norms for efficiency
     sig_x = np.sqrt(np.sum(x**2, axis=0))
     
     for run in range(n_runs):
-        # Generate random initial lags for each trial
         init_lags = np.random.randint(-max_lag_init, max_lag_init + 1, size=M)
         
-        # Apply initial random shifts
         x_shifted = np.zeros_like(x)
         for i in range(M):
             lag = init_lags[i]
@@ -391,7 +367,6 @@ def woody_stochastic(x: np.ndarray,
             else:
                 x_shifted[:, i] = x[:, i]
         
-        # Run Woody filter on shifted data
         try:
             aligned_avg, detected_lags = woody(
                 x_shifted,
@@ -402,9 +377,7 @@ def woody_stochastic(x: np.ndarray,
                 max_shift=max_shift
             )
             
-            # Compute final correlation coefficient (p value)
             if np.sqrt(np.dot(aligned_avg, aligned_avg)) > 0 and np.all(sig_x > 0):
-                # Reconstruct aligned trials to compute correlation
                 x_aligned = np.zeros_like(x)
                 for i in range(M):
                     total_lag = init_lags[i] + detected_lags[i]
@@ -415,16 +388,13 @@ def woody_stochastic(x: np.ndarray,
                     else:
                         x_aligned[:, i] = x[:, i]
                 
-                # Compute correlation coefficient
                 p_vec = np.dot(aligned_avg, x_aligned) / (np.sqrt(np.dot(aligned_avg, aligned_avg)) * sig_x)
                 p = np.sum(p_vec) / M
             else:
                 p = -np.inf
             
-            # Combine initial and detected lags
             total_lags = init_lags + detected_lags
             
-            # Store if best
             if p > best_corr:
                 best_corr = p
                 best_avg = aligned_avg.copy()
@@ -432,124 +402,10 @@ def woody_stochastic(x: np.ndarray,
                 
                 if verbose and run % 100 == 0:
                     print(f"Run {run}/{n_runs}: New best corr = {best_corr:.4f}")
-            
-            if return_all:
-                all_results.append({
-                    'run': run,
-                    'init_lags': init_lags.copy(),
-                    'detected_lags': detected_lags.copy(),
-                    'total_lags': total_lags.copy(),
-                    'aligned_avg': aligned_avg.copy(),
-                    'corr': p
-                })
                 
         except Exception as e:
             if verbose:
                 print(f"Run {run} failed: {e}")
             continue
     
-    if verbose:
-        print(f"\nBest correlation: {best_corr:.4f}")
-        print(f"Lag range: [{best_lags.min()}, {best_lags.max()}] samples")
-        print(f"Lag std: {best_lags.std():.2f} samples")
-    
-    if return_all:
-        return best_avg, best_lags, best_corr, all_results
-    else:
-        return best_avg, best_lags, best_corr
-
-
-# Example usage and testing
-if __name__ == "__main__":
-    import matplotlib.pyplot as plt
-    
-    print("Testing Woody filter implementation...")
-    
-    # Create synthetic signal with jitter
-    t = np.linspace(0, 1, 1001)
-    x_base = np.sin(2*np.pi*t) + np.sin(4*np.pi*t) + np.sin(8*np.pi*t)
-    y_env = np.exp(0.01 * np.concatenate([-np.arange(500, 0, -1), [0], -np.arange(1, 501)]))
-    s = x_base * y_env
-    
-    # Generate trials with random temporal jitter
-    np.random.seed(42)
-    n_trials = 100
-    S = np.zeros((1001, n_trials))
-    true_lags = []
-    
-    for i in range(n_trials):
-        tau = int((np.random.rand() - 0.5) * 160)
-        true_lags.append(tau)
-        
-        if tau < 0:
-            S[:, i] = np.concatenate([s[-tau:], np.zeros(-tau)])
-        elif tau > 0:
-            S[:, i] = np.concatenate([np.zeros(tau), s[:1001-tau]])
-        else:
-            S[:, i] = s.copy()
-        
-        # Add noise
-        if i < 50:
-            S[:, i] += np.random.randn(1001) * 0.01
-        else:
-            S[:, i] += np.random.randn(1001) * 0.1
-    
-    # Apply Woody filter with max_shift
-    print("Applying Woody filter with max_shift=100...")
-    wood_avg, est_lags = woody(S, tol=0.1, max_it=100, est_mthd='woody', 
-                                xcorr_mthd='unbiased', max_shift=100)
-    
-    # Apply Thornton method
-    print("Applying Thornton method...")
-    thor_avg, thor_lags = woody(S, tol=0.1, max_it=100, est_mthd='thornton', 
-                                 xcorr_mthd='biased', max_shift=100)
-    
-    # Plot results
-    fig, axes = plt.subplots(3, 1, figsize=(12, 10))
-    
-    # Original signal and jittered trials
-    axes[0].plot(s, 'b', linewidth=2, label='Original signal')
-    axes[0].plot(S[:, ::5], 'r', alpha=0.3)  # Plot every 5th trial
-    axes[0].set_title('Original Signal and Jittered Trials')
-    axes[0].legend()
-    axes[0].grid(True)
-    
-    # Compare averaging methods
-    axes[1].plot(s, 'b', linewidth=2, label='Original signal')
-    axes[1].plot(np.mean(S, axis=1), 'r', label='Simple average')
-    axes[1].plot(wood_avg, 'g', label='Woody average')
-    axes[1].plot(thor_avg, 'k', label='Thornton average')
-    axes[1].set_title('Comparison of Averaging Methods')
-    axes[1].legend()
-    axes[1].grid(True)
-    
-    # Estimated vs true lags
-    axes[2].scatter(range(n_trials), true_lags, alpha=0.5, label='True lags')
-    axes[2].scatter(range(n_trials), est_lags, alpha=0.5, label='Estimated lags')
-    axes[2].set_xlabel('Trial number')
-    axes[2].set_ylabel('Lag (samples)')
-    axes[2].set_title('True vs Estimated Lags')
-    axes[2].legend()
-    axes[2].grid(True)
-    
-    plt.tight_layout()
-    plt.savefig('/home/claude/woody_filter_test.png', dpi=150, bbox_inches='tight')
-    print("Test plot saved to: /home/claude/woody_filter_test.png")
-    
-    # Compute correlation with original signal
-    corr_simple = np.corrcoef(s, np.mean(S, axis=1))[0, 1]
-    corr_woody = np.corrcoef(s, wood_avg)[0, 1]
-    corr_thornton = np.corrcoef(s, thor_avg)[0, 1]
-    
-    print(f"\nCorrelation with original signal:")
-    print(f"  Simple average:    {corr_simple:.4f}")
-    print(f"  Woody average:     {corr_woody:.4f}")
-    print(f"  Thornton average:  {corr_thornton:.4f}")
-    
-    # Compute lag estimation accuracy
-    lag_error = np.abs(np.array(true_lags) - est_lags)
-    print(f"\nLag estimation accuracy:")
-    print(f"  Mean absolute error: {np.mean(lag_error):.2f} samples")
-    print(f"  Std absolute error:  {np.std(lag_error):.2f} samples")
-    
-    print("\nWoody filter test completed successfully!")
+    return best_avg, best_lags, best_corr
