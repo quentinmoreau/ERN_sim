@@ -21,7 +21,7 @@ ern_theta/                 Shared functions
   config.py, io.py         Data paths, event codes, subject lists, epoch loading
 simulations/
   00_erp_in_tf_intro.ipynb             Introduction: ERPs look like oscillations in TF space
-  01_ern_simulation.ipynb              ERN simulations: jitter, regression, Woody, SNR sweep
+  01_ern_simulation.ipynb              ERN simulations: jitter, regression, Woody
   01b_ern_simulation_noiseless.ipynb   Noiseless sanity check of Woody lag recovery
 empirical_analyses/
   02_error_vs_correct.ipynb            Validation on empirical data (response-locked ERN)
