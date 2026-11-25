@@ -1,63 +1,43 @@
-# Exclude autocoherence results as requested
-autocoherence_results/
-
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Jupyter Notebook
-.ipynb_checkpoints
-*/.ipynb_checkpoints/*
-
-# Virtual environments
-venv/
-ENV/
-env/
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Data files (uncomment if you don't want to track large data)
-# *.mat
-# *.npy
-# *.h5
-
-# ERN pipeline folder
+# Data and generated results (not distributed with the repository)
+data/
+results/
 ernpipeline/
-lagged_hilbert_autocoherence/
-
-# MNE data files
 *.fif
 *.fif.gz
-
-# Large data files
 *.mat
 *.npy
 *.npz
 *.h5
 *.hdf5
+
+# External code for the supplementary analyses
+lagged_hilbert_autocoherence/
+autocoherence_results/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+
+# supp not done analyses 
+supplementary/

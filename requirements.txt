@@ -1,0 +1,11 @@
+# Core (simulations + empirical analyses)
+numpy>=1.24
+scipy>=1.10
+matplotlib>=3.7
+pandas>=2.0
+tqdm>=4.60
+mne>=1.6          # empirical analyses only
+jupyter
+
+# Supplementary notebooks only
+specparam>=2.0.0rc1

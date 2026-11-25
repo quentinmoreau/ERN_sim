@@ -1,11 +1,15 @@
 """
-Woody filter for temporal alignment of signals with jitter.
+Woody filter for temporal alignment of single trials with latency jitter.
 
-Translation from MATLAB implementation used in:
-Bonaiuto et al. (2021) "Laminar dynamics of high amplitude beta bursts in human motor cortex"
+Python translation of the MATLAB implementation used in
+Bonaiuto et al. (2021), "Laminar dynamics of high amplitude beta bursts in
+human motor cortex". Original method: Woody (1967), Med. & Biol. Eng. 5, 539-554.
 
-Author: Quentin Moreau
-Date: 2026-01-19
+Lag convention: ``lag > 0`` means the event occurred *later* than in the
+template, so the trial must be shifted ``lag`` samples to the left to align it
+(see :func:`ern_theta.preprocessing.align_trials`).
+
+Author: Quentin Moreau (2026-01-19)
 """
 
 import numpy as np
@@ -56,25 +60,15 @@ def woody(x: np.ndarray,
     
     Examples
     --------
-    >>> # Create synthetic data with jitter
-    >>> t = np.linspace(0, 1, 1001)
-    >>> x_base = np.sin(2*np.pi*t) + np.sin(4*np.pi*t) + np.sin(8*np.pi*t)
-    >>> y_env = np.exp(0.01 * np.concatenate([-np.arange(500, 0, -1), [0], -np.arange(1, 501)]))
-    >>> s = x_base * y_env
-    >>> 
-    >>> # Add random temporal jitter
-    >>> n_trials = 100
-    >>> S = np.zeros((1001, n_trials))
-    >>> for i in range(n_trials):
-    >>>     tau = int((np.random.rand() - 0.5) * 160)
-    >>>     if tau < 0:
-    >>>         S[:, i] = np.concatenate([s[-tau:], np.zeros(-tau-1)])
-    >>>     else:
-    >>>         S[:, i] = np.concatenate([np.zeros(tau), s[:1001-tau]])
-    >>>     S[:, i] += np.random.randn(1001) * 0.1
-    >>> 
-    >>> # Apply Woody filter with max_shift constraint
+    >>> rng = np.random.default_rng(0)
+    >>> t = np.linspace(-1, 1, 1001)
+    >>> s = np.exp(-t**2 / (2 * 0.05**2))                  # transient "ERP"
+    >>> true_lags = rng.integers(-40, 41, size=100)
+    >>> S = np.stack([np.roll(s, k) for k in true_lags], axis=1)
+    >>> S += 0.1 * rng.standard_normal(S.shape)
     >>> aligned_avg, lags = woody(S, max_shift=100)
+    >>> np.corrcoef(lags, true_lags)[0, 1] > 0.99
+    True
     """
     
     if est_mthd == 'woody':
@@ -309,7 +303,8 @@ def woody_stochastic(x: np.ndarray,
                      est_mthd: str = 'woody',
                      xcorr_mthd: str = 'unbiased',
                      max_shift: int = 50,
-                     verbose: bool = False) -> Tuple:
+                     verbose: bool = False,
+                     rng: Optional[np.random.Generator] = None) -> Tuple:
     """
     Stochastic Woody filter with random initialization.
     
@@ -336,6 +331,9 @@ def woody_stochastic(x: np.ndarray,
         Maximum shift to search for alignment (default=50)
     verbose : bool
         Print progress (default=False)
+    rng : np.random.Generator, optional
+        Random number generator used for the initial lag offsets. Pass a seeded
+        generator (``np.random.default_rng(seed)``) for reproducible results.
     
     Returns
     -------
@@ -347,6 +345,7 @@ def woody_stochastic(x: np.ndarray,
         Correlation coefficient of best solution
     """
     N, M = x.shape
+    rng = np.random.default_rng() if rng is None else rng
     
     best_corr = -np.inf
     best_avg = None
@@ -355,7 +354,7 @@ def woody_stochastic(x: np.ndarray,
     sig_x = np.sqrt(np.sum(x**2, axis=0))
     
     for run in range(n_runs):
-        init_lags = np.random.randint(-max_lag_init, max_lag_init + 1, size=M)
+        init_lags = rng.integers(-max_lag_init, max_lag_init + 1, size=M)
         
         x_shifted = np.zeros_like(x)
         for i in range(M):
@@ -403,9 +402,14 @@ def woody_stochastic(x: np.ndarray,
                 if verbose and run % 100 == 0:
                     print(f"Run {run}/{n_runs}: New best corr = {best_corr:.4f}")
                 
-        except Exception as e:
+        except (ValueError, IndexError) as e:
+            # A random initialisation can occasionally push trials far enough
+            # that the alignment fails; skip that run and keep searching.
             if verbose:
                 print(f"Run {run} failed: {e}")
             continue
+    
+    if best_lags is None:
+        raise RuntimeError("woody_stochastic: all runs failed to produce an alignment.")
     
     return best_avg, best_lags, best_corr
